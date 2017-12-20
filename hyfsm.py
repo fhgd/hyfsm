@@ -319,7 +319,7 @@ class Inputs:
     def _append(self, name, default=None):
         if name in self._params:
             self._params.pop(name)
-        arg = Argument(name, default, parent=self)
+        arg = Argument(name, default, parent=self._parent)
         object.__setattr__(self, name, arg)
         self._params[name] = arg
 
