@@ -2,6 +2,10 @@ import collections
 from collections import OrderedDict
 import numpy as np
 
+import sys
+sys.path.append('../tasksweep')
+import task as tasksweep
+
 
 class FSM(object):
     def __init__(self, state=None, graph=None, name='', trj_max=20, debug=False):
@@ -263,6 +267,88 @@ def get_name(func):
         return func.__name__
 
 
+class PlotManager(object):
+    def __init__(self, task=None):
+        self.plots = OrderedDict()
+        self.reset()
+        self.task = task
+
+    def reset(self):
+        for plot in self.plots:
+            plot.reset()
+        self.lines = {}
+        self.leglines = {}
+        self.is_configured = False
+        self.am = None
+        self.plot_datas = {}
+        self.states = (0,)
+
+    def configure(self):
+        if not self.is_configured and self.plots:
+            idxs = {}
+            for plot, (row, col) in self.plots.items():
+                xax = None
+                if isinstance(plot, tasksweep.SweepPlot) and plot.idx in idxs:
+                    xax = idxs[plot.idx]
+                ax = self.am.get_axes(row, col, xax)
+                self.plots[plot] = ax
+                ax.grid(True)
+                if plot.xlabel:
+                    ax.set_xlabel(plot.xlabel)
+                if plot.ylabel:
+                    ax.set_ylabel(plot.ylabel,
+                        rotation='horizontal', ha='right', labelpad=10)
+                if isinstance(plot, tasksweep.SweepPlot):
+                    left, right = plot.xlim
+                    if None not in (left, right):
+                        offs = 0.025 * abs(right - left)
+                        ax.set_xlim(left-offs, right+offs)
+                    if plot.idx not in idxs:
+                        idxs[plot.idx] = ax
+            self.am.fig.tight_layout()
+            self.is_configured = True
+
+    def add_sweep_plot(self, arg, row, col, ylabel, use_cursor, **kwargs):
+        plot = tasksweep.SweepPlot(
+            param_name=arg.name,
+            idx=(0,),
+            x='time',
+            y='value',
+            use_cursor=use_cursor,
+            xlim=(None, None),
+            xlabel='time / (clock ticks)',
+            ylabel=ylabel if ylabel else arg.name,
+            **kwargs)
+        self.plots[plot] = row, col
+        self.plot_datas[plot] = arg
+
+    def plot(self):
+        leg_axs = {}
+        for plot, ax in self.plots.items():
+            output = {}
+            output['time'] = self.states[0]
+            output['value'] = self.plot_datas[plot].value
+            key = self.states
+            line = plot.plot(ax, key, {}, output)
+            keys = self.lines.setdefault(line, [])
+            keys.append(key)
+            self.am.lines[line] = self
+            if hasattr(plot, 'label') and plot.label:
+                lines = leg_axs.setdefault(ax, [])
+                lines.append((line, plot.label))
+        # create legend
+        self.leglines = {}
+        for ax, legs in leg_axs.items():
+            lines, labels = zip(*legs)
+            leg = ax.legend(lines, labels)
+            # make legend clickable
+            for line, legline in zip(lines, leg.get_lines()):
+                legline.set_picker(10)
+                self.leglines[legline] = line
+                self.am.lines[legline] = self
+        self.states = (self.states[0] + 1,)
+
+
 class ConstantPointer:
     def __init__(self, value=None):
         self._value = value
@@ -303,6 +389,12 @@ class Argument:
             self._pointer = FuncPointer(value)
         else:
             self._pointer = ConstantPointer(value)
+
+    def plot(self, row=0, col=0, dt=1, ylabel='', use_cursor=False, **kwargs):
+        pm = self._parent._pm
+        pm.add_sweep_plot(self, row, col, ylabel, use_cursor, **kwargs)
+        am = self._parent._am
+        am.append_loc(row, col)
 
 
 class Inputs:
@@ -360,6 +452,10 @@ class HyFSM(FSM):
         for name in names:
             self.inputs._append(name.strip())
 
+        self._am = tasksweep.AxesManager()
+        self._pm = PlotManager()
+        self._pm.am = self._am
+
     def add_child_fsm(self, fsm, name=''):
         self._childs[name] = fsm
         if not name:
@@ -398,6 +494,11 @@ class HyFSM(FSM):
                 fsm_cache[fsm] = newstates
         for fsm, newstates in fsm_cache.items():
             fsm._states = newstates
+
+        self._pm.configure()
+        self._pm.plot()
+        self._am.fig.show()
+        self._am.update()
 
 
 if __name__ == '__main__':
@@ -454,6 +555,10 @@ if __name__ == '__main__':
 
 
     ctrl = Controler()
+    ctrl.inputs.limit.plot()
+    ctrl.inputs.limit.plot(row=1)
+    ctrl.inputs.limit.plot(row=2)
+
     print(ctrl.states, ctrl.counter.states)
     for n in range(15):
         ctrl.next_state(limit=3)
