@@ -263,55 +263,46 @@ def get_name(func):
         return func.__name__
 
 
-class Result:
-    def __init__(self, name, value=None):
-        self.name = name
-        self._results = [value]
+class ConstantPointer:
+    def __init__(self, value=None):
+        self._value = value
 
     @property
     def value(self):
-        return self._results[-1]
-
-    @value.setter
-    def value(self, value):
-        self._results.append(value)
+        return self._value
 
 
-class FuncEval:
+class FuncPointer:
     def __init__(self, func):
         self.func = func
-        self._results = []
-        self.name = func.__name__
 
     @property
     def value(self):
-        value = self.func()
-        self._results.append(value)
-        return value
+        return self.func()
 
 
 class Argument:
     def __init__(self, name, default=None, parent=None):
         self.name = name
         self.default = default
-        self._value = None
+        self._pointer = None
         self._parent = parent
 
     @property
     def value(self):
         try:
-            return self._value.value
+            return self._pointer.value
         except AttributeError:
             return self.default
 
     @value.setter
     def value(self, value):
         if hasattr(value, 'value'):
-            self._value = value
+            self._pointer = value
         elif hasattr(value, '__call__'):
-            self._value = FuncEval(value)
+            self._pointer = FuncPointer(value)
         else:
-            self._value = Result('Constant', value)
+            self._pointer = ConstantPointer(value)
 
 
 class Inputs:
