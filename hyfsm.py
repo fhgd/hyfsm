@@ -371,9 +371,10 @@ class HyFSM(FSM):
 
     def add_child_fsm(self, fsm, name=''):
         self._childs[name] = fsm
-        if not name:
-            name = fsm.__class__.__name__.lower()
-        setattr(self, name, fsm)
+        if name:
+            setattr(self, name, fsm)
+        else:
+            return fsm
 
     @property
     def state(self):
