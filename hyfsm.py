@@ -293,6 +293,10 @@ class PlotManager(object):
                 ax.grid(True)
                 if plot.xlabel:
                     ax.set_xlabel(plot.xlabel)
+                else:
+                    # NEW
+                    tasksweep.plt.setp(ax.get_xticklabels(), visible=False)
+                    ax.axes.xaxis.set_ticks_position('none')
                 if plot.ylabel:
                     ax.set_ylabel(plot.ylabel,
                         rotation='horizontal', ha='right', labelpad=10)
@@ -306,7 +310,7 @@ class PlotManager(object):
             self.am.fig.tight_layout()
             self.is_configured = True
 
-    def add_sweep_plot(self, arg, row, col, ylabel, use_cursor, **kwargs):
+    def add_sweep_plot(self, arg, row, col, xlabel, ylabel, use_cursor, **kwargs):
         plot = tasksweep.SweepPlot(
             param_name=arg.name,
             idx=(0,),
@@ -314,8 +318,8 @@ class PlotManager(object):
             y='value',
             use_cursor=use_cursor,
             xlim=(None, None),
-            xlabel='time / (clock ticks)',
-            ylabel=ylabel if ylabel else arg.name,
+            xlabel='time / (clock ticks)' if xlabel is None else xlabel,
+            ylabel=arg.name if ylabel is None else ylabel,
             **kwargs)
         self.plots[plot] = row, col
         self.plot_datas[plot] = arg
@@ -388,9 +392,10 @@ class Argument:
         else:
             self._pointer = ConstantPointer(value)
 
-    def plot(self, row=0, col=0, dt=1, ylabel='', use_cursor=False, **kwargs):
+    def plot(self, row=0, col=0, dt=1, xlabel=None, ylabel=None,
+             use_cursor=False, **kwargs):
         pm = self._parent._pm
-        pm.add_sweep_plot(self, row, col, ylabel, use_cursor, **kwargs)
+        pm.add_sweep_plot(self, row, col, xlabel, ylabel, use_cursor, **kwargs)
         am = self._parent._am
         am.append_loc(row, col)
 
@@ -495,8 +500,9 @@ class HyFSM(FSM):
 
         self._pm.configure()
         self._pm.plot()
-        self._am.fig.show()
-        self._am.update()
+        if self._am.fig is not None:
+            self._am.fig.show()
+            self._am.update()
 
 
 if __name__ == '__main__':
@@ -553,8 +559,8 @@ if __name__ == '__main__':
 
 
     ctrl = Controler()
-    ctrl.inputs.limit.plot()
-    ctrl.inputs.limit.plot(row=1)
+    ctrl.inputs.limit.plot(row=0, xlabel='')
+    ctrl.inputs.limit.plot(row=1, xlabel='')
     ctrl.inputs.limit.plot(row=2)
 
     print(ctrl.states, ctrl.counter.states)
