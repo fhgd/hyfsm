@@ -2,8 +2,6 @@ import collections
 from collections import OrderedDict
 import numpy as np
 
-import sys
-sys.path.append('../tasksweep')
 import task as tasksweep
 
 
