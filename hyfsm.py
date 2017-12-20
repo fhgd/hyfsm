@@ -291,10 +291,11 @@ class FuncEval:
 
 
 class Argument:
-    def __init__(self, name, default=None):
+    def __init__(self, name, default=None, parent=None):
         self.name = name
         self.default = default
         self._value = None
+        self._parent = parent
 
     @property
     def value(self):
@@ -324,12 +325,12 @@ class Inputs:
         self._params = OrderedDict()
         self._parent = parent
 
-    def _append(self, param):
-        object.__setattr__(self, param.name, param)
-        param._parent = self
-        if param.name in self._params:
-            self._params.pop(param.name)
-        self._params[param.name] = param
+    def _append(self, name, default=None):
+        if name in self._params:
+            self._params.pop(name)
+        arg = Argument(name, default, parent=self)
+        object.__setattr__(self, name, arg)
+        self._params[name] = arg
 
     def __iter__(self):
         for name, param in self._params.items():
@@ -366,15 +367,13 @@ class HyFSM(FSM):
         except AttributeError:
             names = ''
         for name in names:
-            arg = Argument(name.strip())
-            self.inputs._append(arg)
+            self.inputs._append(name.strip())
 
     def add_child_fsm(self, fsm, name=''):
         self._childs[name] = fsm
-        if name:
-            setattr(self, name, fsm)
-        else:
-            return fsm
+        if not name:
+            name = fsm.__class__.__name__.lower()
+        setattr(self, name, fsm)
 
     @property
     def state(self):
