@@ -1,5 +1,6 @@
 import collections
 from collections import OrderedDict
+from functools import wraps
 import numpy as np
 
 import task as tasksweep
@@ -392,13 +393,15 @@ class Argument:
         else:
             self._pointer = ConstantPointer(value)
 
-    def plot(self, row=0, col=0, dt=1, xlabel=None, ylabel=None,
-             use_cursor=False, **kwargs):
-        pm = self._parent._pm
-        pm.add_sweep_plot(self, row, col, xlabel, ylabel, use_cursor, **kwargs)
-        am = self._parent._am
-        am.append_loc(row, col)
-
+    def plot(self, row=0, col=0, xlabel=None, ylabel=None, use_cursor=False,
+             **kwargs):
+        kwargs['__obj__'] = self
+        kwargs['row'] = row
+        kwargs['col'] = col
+        kwargs['xlabel'] = xlabel
+        kwargs['ylabel'] = ylabel
+        kwargs['use_cursor'] = use_cursor
+        self._parent._plot_config.append(kwargs)
 
 class Inputs:
     # read-only attributes except for underscore
@@ -455,9 +458,54 @@ class HyFSM(FSM):
         for name in names:
             self.inputs._append(name.strip())
 
+        self._plot_config = []
+
+        self.is_configured = False
+        self._config = []
+        self._configure_idx = []
+
+        self._am = None
+        self._pm = None
+
+    @property
+    def _fsms(self):
+        fsms = [self] if self.graph else []
+        fsms.extend(self._childs.values())
+        return fsms
+
+    def plot_config(self):
         self._am = tasksweep.AxesManager()
         self._pm = PlotManager()
         self._pm.am = self._am
+        for fsm in self._fsms:
+            for kwargs in fsm._plot_config:
+                obj = kwargs.pop('__obj__')
+                self._pm.add_sweep_plot(obj, **kwargs)
+                row = kwargs['row']
+                col = kwargs['col']
+                self._am.append_loc(row, col)
+
+    def configure_main(self):
+        for task in self.tasks.items:
+            for func, obj, args, kwargs in task._config:
+                if func.__name__ in ['plot']:
+                    sig = inspect.getargspec(func)
+                    func_args = dict(zip_longest(sig.args[::-1],
+                                     sig.defaults[::-1]))
+                    for name, val in zip(sig.args, args):
+                        func_args[name] = val
+                    func_args.update(kwargs)
+                    row = func_args['row']
+                    col = func_args['col']
+                    self._am.append_loc(row, col)
+                    fsm._pm.am = self._am
+
+    def configure(self):
+        for idx in self._configure_idx:
+            func, obj, args, kwargs = self._config[idx]
+            func(obj, *args, **kwargs)
+        if self.params._pm.am is not None:
+            self.params._pm.configure()
 
     def add_child_fsm(self, fsm, name=''):
         self._childs[name] = fsm
@@ -484,9 +532,7 @@ class HyFSM(FSM):
         for name, value in kwargs.items():
             self.inputs._params[name].value = value
         fsm_cache = {}
-        fsms = [self] if self.graph else []
-        fsms.extend(self._childs.values())
-        for fsm in fsms:
+        for fsm in self._fsms:
             event = fsm.get_active_event()
             if event:
                 # make state transition and action
@@ -498,11 +544,14 @@ class HyFSM(FSM):
         for fsm, newstates in fsm_cache.items():
             fsm._states = newstates
 
-        self._pm.configure()
-        self._pm.plot()
-        if self._am.fig is not None:
-            self._am.fig.show()
-            self._am.update()
+        if self._am is None:
+            self._am = tasksweep.AxesManager()
+        else:
+            self._pm.configure()
+            self._pm.plot()
+            if self._am.fig is not None:
+                self._am.fig.show()
+                self._am.update()
 
 
 if __name__ == '__main__':
@@ -559,11 +608,12 @@ if __name__ == '__main__':
 
 
     ctrl = Controler()
-    ctrl.inputs.limit.plot(row=0, xlabel='')
-    ctrl.inputs.limit.plot(row=1, xlabel='')
-    ctrl.inputs.limit.plot(row=2)
+    ctrl.counter.inputs.start.plot(row=0, xlabel='')
+    ctrl.inputs.limit.plot(row=1)
+
+    ctrl.plot_config()
 
     print(ctrl.states, ctrl.counter.states)
-    for n in range(15):
+    for n in range(30):
         ctrl.next_state(limit=3)
         print(ctrl.states, ctrl.counter.states)
