@@ -2121,7 +2121,7 @@ class SweepPlot(object):
             if self.cursor is None:
                 self.cursor, = ax.plot(np.nan, np.nan,
                     marker='o',
-                    markersize=17.5,
+                    markersize=12,
                     alpha=0.5)
             self.cursor.set_data([xval, yval])
             #~ self.cursor.set_color(shade_color(line.get_color(), 50))

@@ -2,6 +2,10 @@ import collections
 from collections import OrderedDict
 from functools import wraps
 import numpy as np
+import matplotlib.pylab as plt
+from matplotlib.gridspec import GridSpec
+from matplotlib.colors import colorConverter
+from colorsys import rgb_to_hls, hls_to_rgb
 
 import task as tasksweep
 
@@ -267,10 +271,11 @@ def get_name(func):
 
 
 class PlotManager(object):
-    def __init__(self, task=None):
+    def __init__(self, task=None, hyfsm=None):
         self.plots = OrderedDict()
         self.reset()
         self.task = task
+        self.hyfsm = hyfsm
 
     def reset(self):
         for plot in self.plots:
@@ -296,7 +301,7 @@ class PlotManager(object):
                     ax.set_xlabel(plot.xlabel)
                 else:
                     # NEW
-                    tasksweep.plt.setp(ax.get_xticklabels(), visible=False)
+                    plt.setp(ax.get_xticklabels(), visible=False)
                     ax.axes.xaxis.set_ticks_position('none')
                 if plot.ylabel:
                     ax.set_ylabel(plot.ylabel,
@@ -315,6 +320,8 @@ class PlotManager(object):
             self.is_configured = True
 
     def add_sweep_plot(self, arg, row, col, xlabel, ylabel, use_cursor, **kwargs):
+        if 'marker' not in kwargs:
+            kwargs['marker'] = '.'
         plot = tasksweep.SweepPlot(
             param_name=arg.name,
             idx=(0,),
@@ -353,6 +360,130 @@ class PlotManager(object):
                 self.leglines[legline] = line
                 self.am.lines[legline] = self
         self.states = (self.states[0] + 1,)
+
+
+class AxesManager(object):
+    def __init__(self):
+        self.rows = 1
+        self.cols = 1
+        self.locs = {}
+        self.fig = None
+        self.lines = {}
+
+    @staticmethod
+    def _loc(loc):
+        if isinstance(loc, (tuple, list)):
+            if loc[1] is not None:
+                return (loc[0], loc[1]+1)
+            else:
+                return (loc[0], loc[1])
+        elif loc is None:
+            return (None, None)
+        else:
+            return (loc, loc+1)
+
+    def append_loc(self, row, col):
+        ridx = self._loc(row)
+        cidx = self._loc(col)
+        self.rows = max(self.rows, 1 if ridx[1] is None else ridx[1])
+        self.cols = max(self.cols, 1 if cidx[1] is None else cidx[1])
+        self.locs[row, col] = (ridx, cidx), None
+        return ridx, cidx
+
+    def get_axes(self, row, col, xax=None):
+        (ridx, cidx), ax = self.locs[row, col]
+        if ax is None:
+            gs = GridSpec(self.rows, self.cols)
+            if self.fig is None:
+                self.fig = plt.figure()
+            self.add_subplot_zoom(self.fig)
+            self.fig.canvas.mpl_connect('pick_event', self.on_pick)
+            ax = self.fig.add_subplot(gs[slice(*ridx), slice(*cidx)], sharex=xax)
+            self.locs[row, col] = (ridx, cidx), ax
+            return ax
+        else:
+            return ax
+
+    def update(self):
+        for ax in self.fig.axes:
+            ax.relim()
+            ax.autoscale_view()
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+
+    def on_pick(self, event):
+        line = event.artist
+        idx = event.ind[0]
+        pm = self.lines[line]
+        if line in pm.leglines:
+            plotted_line = pm.leglines[line]
+            vis = not plotted_line.get_visible()
+            plotted_line.set_visible(vis)
+            line.set_alpha(1.0 if vis else 0.2)
+            line.figure.canvas.draw()
+            line.figure.canvas.flush_events()
+        else:
+            keys = pm.lines[line]
+            key = keys[idx]
+            for plot, ax in pm.plots.items():
+                y = plot.update_cursor(ax, key, args=None, output=None)
+                if hasattr(plot, 'annotation'):
+                    state_args = OrderedDict()
+                    #~ for names in pm.task.params._state_names:
+                        #~ for name in names:
+                            #~ state_args[name] = args[name]
+                    if y is None:
+                        anno_text = []
+                    else:
+                        #~ anno_text = ['{}: {:.7g}'.format(plot.y, y)]
+                        anno_text = ['{:.7g}'.format(y)]
+                    anno_text.append('{!r}'.format(pm.hyfsm.states['fsm']))
+                    for n, v in state_args.items():
+                        try:
+                            anno_text.append('{} = {:.6g}'.format(n, v))
+                        except (ValueError, TypeError):
+                            if not isinstance(v, (np.ndarray, list, tuple)):
+                                anno_text.append('{} = {}'.format(n, v))
+                    plot.annotation.set_text('\n'.join(anno_text))
+                    plot.annotation.set_visible(True)
+            self.update()
+
+    def add_subplot_zoom(self, fig):
+        # from
+        # https://www.semipol.de/2015/09/04/matplotlib-interactively-zooming-to-a-subplot.html
+        # temporary store for the currently zoomed axes. Use a list to work around
+        # python's scoping rules
+        zoomed_axes = [None]
+
+        def on_zoom_click(event):
+            ax = event.inaxes
+            if ax is None:
+                # occurs when a region not in an axis is clicked...
+                return
+            # we want to allow other navigation modes as well. Only act in case
+            # shift was pressed and the correct mouse button was used
+            if event.key != 'shift' or event.button != 1:
+                return
+            if zoomed_axes[0] is None:
+                # not zoomed so far. Perform zoom
+                # store the original position of the axes
+                zoomed_axes[0] = (ax, ax.get_position())
+                ax.set_position([0.1, 0.1, 0.85, 0.85])
+                # hide all the other axes...
+                for axis in event.canvas.figure.axes:
+                    if axis is not ax:
+                        axis.set_visible(False)
+            else:
+                # restore the original state
+                zoomed_axes[0][0].set_position(zoomed_axes[0][1])
+                zoomed_axes[0] = None
+                # make other axes visible again
+                for axis in event.canvas.figure.axes:
+                    axis.set_visible(True)
+            # redraw to make changes visible.
+            event.canvas.draw()
+            event.canvas.flush_events()
+        fig.canvas.mpl_connect('button_press_event', on_zoom_click)
 
 
 class ConstantPointer:
@@ -415,7 +546,7 @@ class Param:
         else:
             self._pointer = ConstantPointer(value)
 
-    def plot(self, row=0, col=0, xlabel=None, ylabel=None, use_cursor=False,
+    def plot(self, row=0, col=0, xlabel=None, ylabel=None, use_cursor=True,
              **kwargs):
         kwargs['__obj__'] = self
         kwargs['row'] = row
@@ -514,7 +645,7 @@ class HyFSM(FSM):
         return fsms
 
     def plot_func(self, func_name, row=0, col=0, xlabel=None, ylabel=None,
-                  use_cursor=False, **kwargs):
+                  use_cursor=True, **kwargs):
         if ylabel is None:
             ylabel = '{}.\n{}'
             ylabel = ylabel.format(self.__class__.__name__, func_name)
@@ -529,7 +660,7 @@ class HyFSM(FSM):
         self._plot_config.append(kwargs)
 
     def plot_state(self, state_name, row=0, col=0,
-                   xlabel=None, ylabel=None, use_cursor=False, **kwargs):
+                   xlabel=None, ylabel=None, use_cursor=True, **kwargs):
         param = Param(state_name, parent=self)
         param.value = StatePointer(self, state_name)
         if ylabel is None:
@@ -544,7 +675,7 @@ class HyFSM(FSM):
         self._plot_config.append(kwargs)
 
     def plot_input(self, name, row=0, col=0,
-                   xlabel=None, ylabel=None, use_cursor=False, **kwargs):
+                   xlabel=None, ylabel=None, use_cursor=True, **kwargs):
         if ylabel is None:
             ylabel = '{}.\ninputs.\n{}'
             ylabel = ylabel.format(self.__class__.__name__, name)
@@ -557,8 +688,8 @@ class HyFSM(FSM):
         self._plot_config.append(kwargs)
 
     def configure_plots(self):
-        self._am = tasksweep.AxesManager()
-        self._pm = PlotManager()
+        self._am = AxesManager()
+        self._pm = PlotManager(hyfsm=self)
         self._pm.am = self._am
         for fsm in self._fsms:
             for kwargs in fsm._plot_config:
@@ -629,7 +760,7 @@ class HyFSM(FSM):
             fsm._states = newstates
 
         if self._am is None:
-            self._am = tasksweep.AxesManager()
+            self._am = AxesManager()
         else:
             self._pm.configure()
             self._pm.plot()
@@ -701,6 +832,6 @@ if __name__ == '__main__':
     ctrl.configure_plots()
 
     print(ctrl.states, ctrl.counter.states)
-    for n in range(30):
+    for n in range(20):
         ctrl.next_state(limit=3)
         print(ctrl.states, ctrl.counter.states)
