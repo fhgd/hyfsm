@@ -300,7 +300,10 @@ class PlotManager(object):
                     ax.axes.xaxis.set_ticks_position('none')
                 if plot.ylabel:
                     ax.set_ylabel(plot.ylabel,
-                        rotation='horizontal', ha='right', labelpad=10)
+                                  rotation='horizontal',
+                                  ha='right',
+                                  va='center',
+                                  labelpad=10)
                 if isinstance(plot, tasksweep.SweepPlot):
                     left, right = plot.xlim
                     if None not in (left, right):
@@ -370,7 +373,26 @@ class FuncPointer:
         return self.func()
 
 
-class Argument:
+class FuncPointer:
+    def __init__(self, func):
+        self.func = func
+
+    @property
+    def value(self):
+        return self.func()
+
+
+class StatePointer:
+    def __init__(self, fsm, state_name):
+        self.fsm = fsm
+        self.state_name = state_name
+
+    @property
+    def value(self):
+        return self.fsm.states[self.state_name]
+
+
+class Param:
     def __init__(self, name, default=None, parent=None):
         self.name = name
         self.default = default
@@ -403,7 +425,7 @@ class Argument:
         kwargs['use_cursor'] = use_cursor
         self._parent._plot_config.append(kwargs)
 
-class Inputs:
+class Parameters:
     # read-only attributes except for underscore
     def __setattr__(self, name, value):
         if not name.startswith('_'):
@@ -417,7 +439,7 @@ class Inputs:
     def _append(self, name, default=None):
         if name in self._params:
             self._params.pop(name)
-        arg = Argument(name, default, parent=self._parent)
+        arg = Param(name, default, parent=self._parent)
         object.__setattr__(self, name, arg)
         self._params[name] = arg
 
@@ -450,7 +472,9 @@ class HyFSM(FSM):
         self._states = {}
         super().__init__()
         self._childs = {}
-        self.inputs = Inputs(self)
+
+        # extract inputs
+        self.inputs = Parameters(self)
         try:
             names = self.__class__.inputs.split(',')
         except AttributeError:
@@ -458,14 +482,30 @@ class HyFSM(FSM):
         for name in names:
             self.inputs._append(name.strip())
 
-        self._plot_config = []
-
-        self.is_configured = False
-        self._config = []
-        self._configure_idx = []
+        # extract outputs
+        self.outputs = Parameters(self)
+        try:
+            names = self.__class__.outputs.split(',')
+        except AttributeError:
+            names = ''
+        for name in names:
+            _name = name.strip()
+            if hasattr(self, _name):
+                func = getattr(self, _name)
+                self.outputs._append(_name)
+                param = self.outputs._params[_name]
+                param.value = func
+            else:
+                msg = 'WARNING: {!r} has no (output) method {!r}'
+                msg = msg.format(self.__class__.__name__, _name)
+                print(msg)
 
         self._am = None
         self._pm = None
+        self._plot_config = []
+        self.is_configured = False
+        #~ self._config = []
+        #~ self._configure_idx = []
 
     @property
     def _fsms(self):
@@ -473,12 +513,56 @@ class HyFSM(FSM):
         fsms.extend(self._childs.values())
         return fsms
 
-    def plot_config(self):
+    def plot_func(self, func_name, row=0, col=0, xlabel=None, ylabel=None,
+                  use_cursor=False, **kwargs):
+        if ylabel is None:
+            ylabel = '{}.\n{}'
+            ylabel = ylabel.format(self.__class__.__name__, func_name)
+        param = Param(func_name, parent=self)
+        param.value = getattr(self, func_name)
+        kwargs['__obj__'] = param
+        kwargs['row'] = row
+        kwargs['col'] = col
+        kwargs['xlabel'] = xlabel
+        kwargs['ylabel'] = ylabel
+        kwargs['use_cursor'] = use_cursor
+        self._plot_config.append(kwargs)
+
+    def plot_state(self, state_name, row=0, col=0,
+                   xlabel=None, ylabel=None, use_cursor=False, **kwargs):
+        param = Param(state_name, parent=self)
+        param.value = StatePointer(self, state_name)
+        if ylabel is None:
+            ylabel = '{}.\nstates.\n{}'
+            ylabel = ylabel.format(self.__class__.__name__, state_name)
+        kwargs['__obj__'] = param
+        kwargs['row'] = row
+        kwargs['col'] = col
+        kwargs['xlabel'] = xlabel
+        kwargs['ylabel'] = ylabel
+        kwargs['use_cursor'] = use_cursor
+        self._plot_config.append(kwargs)
+
+    def plot_input(self, name, row=0, col=0,
+                   xlabel=None, ylabel=None, use_cursor=False, **kwargs):
+        if ylabel is None:
+            ylabel = '{}.\ninputs.\n{}'
+            ylabel = ylabel.format(self.__class__.__name__, name)
+        kwargs['__obj__'] = self.inputs._params[name]
+        kwargs['row'] = row
+        kwargs['col'] = col
+        kwargs['xlabel'] = xlabel
+        kwargs['ylabel'] = ylabel
+        kwargs['use_cursor'] = use_cursor
+        self._plot_config.append(kwargs)
+
+    def configure_plots(self):
         self._am = tasksweep.AxesManager()
         self._pm = PlotManager()
         self._pm.am = self._am
         for fsm in self._fsms:
             for kwargs in fsm._plot_config:
+                kwargs = kwargs.copy()
                 obj = kwargs.pop('__obj__')
                 self._pm.add_sweep_plot(obj, **kwargs)
                 row = kwargs['row']
@@ -562,7 +646,7 @@ if __name__ == '__main__':
             super().__init__()
 
             self.add_state('counter', 0)
-            self.add_transition('IDLE',  self.ev_start,    'COUNT')
+            self.add_transition('IDLE',  self.ev_start,    'COUNT', self.count)
             self.add_transition('COUNT', self.ev_running,  'COUNT', self.count)
             self.add_transition('COUNT', self.ev_finished, 'DONE')
             self.add_transition('DONE',  self.ev_stop,     'IDLE', self.reset)
@@ -588,6 +672,7 @@ if __name__ == '__main__':
 
     class Controler(HyFSM):
         inputs = 'limit'
+        outputs = 'cmd_count'
 
         def __init__(self):
             super().__init__()
@@ -597,21 +682,23 @@ if __name__ == '__main__':
             self.add_transition('DONE', 'IDLE')
 
             self.add_child_fsm(Counter(), name='counter')
-            self.counter.inputs.start.value = self.count
+            self.counter.inputs.start.value = self.cmd_count
             self.counter.inputs.limit.value = self.inputs.limit
 
         def ev_counter_done(self):
             return self.counter.states['fsm'] == 'DONE'
 
-        def count(self):
+        def cmd_count(self):
             return self.states['fsm'] == 'COUNT'
 
 
     ctrl = Controler()
-    ctrl.counter.inputs.start.plot(row=0, xlabel='')
-    ctrl.inputs.limit.plot(row=1)
+    ctrl.plot_func('cmd_count', row=0, xlabel='')
+    ctrl.plot_func('ev_counter_done', row=1, xlabel='')
+    ctrl.counter.plot_state('counter', row=2, xlabel='')
+    ctrl.counter.plot_input('start', row=3)
 
-    ctrl.plot_config()
+    ctrl.configure_plots()
 
     print(ctrl.states, ctrl.counter.states)
     for n in range(30):
