@@ -437,7 +437,9 @@ class AxesManager(object):
                     else:
                         #~ anno_text = ['{}: {:.7g}'.format(plot.y, y)]
                         anno_text = ['{:.7g}'.format(y)]
-                    fsm_state = pm.hyfsm._results[pm.hyfsm._fsm_state][idx]
+                    param = pm.plot_datas[plot]
+                    hyfsm = param._parent
+                    fsm_state = hyfsm._results[hyfsm._fsm_state][idx]
                     anno_text.append('{!r}'.format(fsm_state))
                     for n, v in state_args.items():
                         try:
@@ -772,12 +774,14 @@ class HyFSM(FSM):
                 for func in actions:
                     newstates.update(func())
                 fsm_cache[fsm] = newstates
+
         for fsm, newstates in fsm_cache.items():
             fsm._states = newstates
 
         #~ self.out()
-        for param, datas in self._results.items():
-            datas.append(param.value)
+        for fsm in self._fsms:
+            for param, datas in fsm._results.items():
+                datas.append(param.value)
 
         if self._am is None:
             self._am = AxesManager()
