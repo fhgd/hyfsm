@@ -611,6 +611,7 @@ class HyFSM(FSM):
         self._states = {}
         super().__init__()
         self._childs = {}
+        self._results = {}
 
         # extract inputs
         self.inputs = Parameters(self)
@@ -632,7 +633,7 @@ class HyFSM(FSM):
             if hasattr(self, _name):
                 func = getattr(self, _name)
                 param = self.outputs._append(_name)
-                param.value = ResultPointer(func())
+                param.value = func
             else:
                 msg = 'WARNING: {!r} has no (output) method {!r}'
                 msg = msg.format(self.__class__.__name__, _name)
@@ -645,7 +646,6 @@ class HyFSM(FSM):
         #~ self._config = []
         #~ self._configure_idx = []
 
-        self._results = {}
         self._fsm_state = Param('fsm')
         self._fsm_state.value = StatePointer(self, 'fsm')
 
@@ -669,7 +669,6 @@ class HyFSM(FSM):
         kwargs['ylabel'] = ylabel
         kwargs['use_cursor'] = use_cursor
         self._plot_config.append(kwargs)
-        #~ self._results[param] = []
         self._results[self._fsm_state] = []
 
     def plot_state(self, state_name, row=0, col=0,
@@ -686,7 +685,6 @@ class HyFSM(FSM):
         kwargs['ylabel'] = ylabel
         kwargs['use_cursor'] = use_cursor
         self._plot_config.append(kwargs)
-        #~ self._results[param] = []
         self._results[self._fsm_state] = []
 
     def plot_input(self, name, row=0, col=0,
@@ -702,7 +700,6 @@ class HyFSM(FSM):
         kwargs['ylabel'] = ylabel
         kwargs['use_cursor'] = use_cursor
         self._plot_config.append(kwargs)
-        #~ self._results[param] = []
         self._results[self._fsm_state] = []
 
     def configure_plots(self):
@@ -765,32 +762,47 @@ class HyFSM(FSM):
         for name, value in kwargs.items():
             self.inputs._params[name].value = value
         fsm_cache = {}
-        for fsm in self._fsms:
-            event = fsm.get_active_event()
+        if self.graph:
+            event = self.get_active_event()
             if event:
                 # make state transition and action
-                newstates = fsm.states
-                actions, newstates['fsm'] = fsm.graph[newstates['fsm']][event]
+                newstates = self.states
+                actions, newstates['fsm'] = self.graph[newstates['fsm']][event]
                 for func in actions:
                     newstates.update(func())
-                fsm_cache[fsm] = newstates
+                fsm_cache[self] = newstates
+        for fsm in self._childs.values():
+            child_caches = fsm.next_state()
+            fsm_cache.update(child_caches)
+        return fsm_cache
 
-        for fsm, newstates in fsm_cache.items():
-            fsm._states = newstates
-
-        #~ self.out()
-        for fsm in self._fsms:
-            for param, datas in fsm._results.items():
-                datas.append(param.value)
-
-        if self._am is None:
-            self._am = AxesManager()
-        else:
+    def run(self, **kwargs):
+        for name, param in self.outputs:
+            self._results[param] = []
+        datas = []
+        names = []
+        for name, values in kwargs.items():
+            names.append(name)
+            datas.append(values)
+        if self._am is not None:
             self._pm.configure()
-            self._pm.plot()
-            if self._am.fig is not None:
-                self._am.fig.show()
-                self._am.update()
+        for values in zip(*datas):
+            dct = {name: value for name, value in zip(names, values)}
+            caches = self.next_state(**dct)
+            for fsm, newstates in caches.items():
+                fsm._states = newstates
+            for fsm in self._fsms:
+                for param, datas in fsm._results.items():
+                    datas.append(param.value)
+            if self._am is not None:
+                self._pm.plot()
+        if self._am is not None:
+            self._am.fig.show()
+            self._am.update()
+        results = {}
+        for name, param in self.outputs:
+            results[name] = self._results[param]
+        return results
 
     def out(self):
         values = {}
@@ -805,6 +817,7 @@ class HyFSM(FSM):
 if __name__ == '__main__':
     class Counter(HyFSM):
         inputs = 'start, limit'
+        outputs = 'counter'
 
         def __init__(self):
             super().__init__()
@@ -833,10 +846,13 @@ if __name__ == '__main__':
         def reset(self):
             return {'counter': 0}
 
+        def counter(self):
+            return self.states['counter']
+
 
     class Controler(HyFSM):
         inputs = 'limit'
-        outputs = 'cmd_count'
+        outputs = 'cmd_count, child_counter'
 
         def __init__(self):
             super().__init__()
@@ -855,6 +871,8 @@ if __name__ == '__main__':
         def cmd_count(self):
             return self.states['fsm'] == 'COUNT'
 
+        def child_counter(self):
+            return self.counter.states['counter']
 
     ctrl = Controler()
     ctrl.plot_func('cmd_count', row=0, xlabel='')
@@ -863,8 +881,12 @@ if __name__ == '__main__':
     ctrl.counter.plot_input('start', row=3)
 
     ctrl.configure_plots()
+    results = ctrl.run(limit=[3]*20)
+    print(results)
 
+
+if 0:
     print(ctrl.states, ctrl.counter.states)
     for n in range(20):
-        ctrl.next_state(limit=3)
+        ctrl.run(limit=3)
         print(ctrl.states, ctrl.counter.states)
