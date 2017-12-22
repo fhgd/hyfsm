@@ -437,7 +437,8 @@ class AxesManager(object):
                     else:
                         #~ anno_text = ['{}: {:.7g}'.format(plot.y, y)]
                         anno_text = ['{:.7g}'.format(y)]
-                    anno_text.append('{!r}'.format(pm.hyfsm.states['fsm']))
+                    fsm_state = pm.hyfsm._results[pm.hyfsm._fsm_state][idx]
+                    anno_text.append('{!r}'.format(fsm_state))
                     for n, v in state_args.items():
                         try:
                             anno_text.append('{} = {:.6g}'.format(n, v))
@@ -504,15 +505,6 @@ class FuncPointer:
         return self.func()
 
 
-class FuncPointer:
-    def __init__(self, func):
-        self.func = func
-
-    @property
-    def value(self):
-        return self.func()
-
-
 class StatePointer:
     def __init__(self, fsm, state_name):
         self.fsm = fsm
@@ -521,6 +513,19 @@ class StatePointer:
     @property
     def value(self):
         return self.fsm.states[self.state_name]
+
+
+class ResultPointer:
+    def __init__(self, value=None):
+        self._results = [value]
+
+    @property
+    def value(self):
+        return self._results[-1]
+
+    @value.setter
+    def value(self, value):
+        self._results.append(value)
 
 
 class Param:
@@ -573,6 +578,7 @@ class Parameters:
         arg = Param(name, default, parent=self._parent)
         object.__setattr__(self, name, arg)
         self._params[name] = arg
+        return arg
 
     def __iter__(self):
         for name, param in self._params.items():
@@ -623,9 +629,8 @@ class HyFSM(FSM):
             _name = name.strip()
             if hasattr(self, _name):
                 func = getattr(self, _name)
-                self.outputs._append(_name)
-                param = self.outputs._params[_name]
-                param.value = func
+                param = self.outputs._append(_name)
+                param.value = ResultPointer(func())
             else:
                 msg = 'WARNING: {!r} has no (output) method {!r}'
                 msg = msg.format(self.__class__.__name__, _name)
@@ -637,6 +642,10 @@ class HyFSM(FSM):
         self.is_configured = False
         #~ self._config = []
         #~ self._configure_idx = []
+
+        self._results = {}
+        self._fsm_state = Param('fsm')
+        self._fsm_state.value = StatePointer(self, 'fsm')
 
     @property
     def _fsms(self):
@@ -658,6 +667,8 @@ class HyFSM(FSM):
         kwargs['ylabel'] = ylabel
         kwargs['use_cursor'] = use_cursor
         self._plot_config.append(kwargs)
+        #~ self._results[param] = []
+        self._results[self._fsm_state] = []
 
     def plot_state(self, state_name, row=0, col=0,
                    xlabel=None, ylabel=None, use_cursor=True, **kwargs):
@@ -673,19 +684,24 @@ class HyFSM(FSM):
         kwargs['ylabel'] = ylabel
         kwargs['use_cursor'] = use_cursor
         self._plot_config.append(kwargs)
+        #~ self._results[param] = []
+        self._results[self._fsm_state] = []
 
     def plot_input(self, name, row=0, col=0,
                    xlabel=None, ylabel=None, use_cursor=True, **kwargs):
         if ylabel is None:
             ylabel = '{}.\ninputs.\n{}'
             ylabel = ylabel.format(self.__class__.__name__, name)
-        kwargs['__obj__'] = self.inputs._params[name]
+        param = self.inputs._params[name]
+        kwargs['__obj__'] = param
         kwargs['row'] = row
         kwargs['col'] = col
         kwargs['xlabel'] = xlabel
         kwargs['ylabel'] = ylabel
         kwargs['use_cursor'] = use_cursor
         self._plot_config.append(kwargs)
+        #~ self._results[param] = []
+        self._results[self._fsm_state] = []
 
     def configure_plots(self):
         self._am = AxesManager()
@@ -759,6 +775,10 @@ class HyFSM(FSM):
         for fsm, newstates in fsm_cache.items():
             fsm._states = newstates
 
+        #~ self.out()
+        for param, datas in self._results.items():
+            datas.append(param.value)
+
         if self._am is None:
             self._am = AxesManager()
         else:
@@ -767,6 +787,15 @@ class HyFSM(FSM):
             if self._am.fig is not None:
                 self._am.fig.show()
                 self._am.update()
+
+    def out(self):
+        values = {}
+        for name, param in self.outputs:
+            func = getattr(self, name)
+            value = func()
+            param._pointer.value = value
+            values[name] = value
+        return values
 
 
 if __name__ == '__main__':
@@ -777,10 +806,10 @@ if __name__ == '__main__':
             super().__init__()
 
             self.add_state('counter', 0)
-            self.add_transition('IDLE',  self.ev_start,    'COUNT', self.count)
-            self.add_transition('COUNT', self.ev_running,  'COUNT', self.count)
-            self.add_transition('COUNT', self.ev_finished, 'DONE')
-            self.add_transition('DONE',  self.ev_stop,     'IDLE', self.reset)
+            self.add_transition('IDLE',     self.ev_start,    'COUNTING', self.count)
+            self.add_transition('COUNTING', self.ev_running,  'COUNTING', self.count)
+            self.add_transition('COUNTING', self.ev_finished, 'DONE')
+            self.add_transition('DONE',     self.ev_stop,     'IDLE', self.reset)
 
         def ev_start(self):
             return self.inputs.start.value
