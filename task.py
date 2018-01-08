@@ -39,6 +39,9 @@ from matplotlib.colors import colorConverter
 import matplotlib.patches as patches
 from colorsys import rgb_to_hls, hls_to_rgb
 
+from arrow import simpleA, simpleAB
+
+
 try:
     from itertools import zip_longest
 except AttributeError:
@@ -2003,29 +2006,25 @@ class StatePlot(object):
         #~ if self.cur_state is None:
         ax.yticks = []
         ax.yticklabels = []
-        if self.cur_arrow is not None:
+        if self.cur_state == yval:
             self.cur_arrow.set_positions([xval, self.yoffs], None)
+            self.cur_arrow.set_arrowstyle(simpleAB)
+            self.cur_arrow.shrinkA = 0
             posA, posB = self.cur_arrow._posA_posB
             xmid = (posA[0] + posB[0]) / 2
             self.cur_label.set_position([xmid, self.yoffs])
-            self.cur_arrow.shrinkA = 2
-        if self.cur_state == yval:
-            self.cur_arrow.shrinkA = 0
         else:
-            style = patches.ArrowStyle.Simple(
-                head_length=0.1,
-                head_width=0.2,
-            )
             self.cur_arrow = patches.FancyArrowPatch(
-                [xval + 0.5, self.yoffs], [xval, self.yoffs],
-                arrowstyle=style,
+                [xval + 1, self.yoffs], [xval, self.yoffs],
+                arrowstyle=simpleA,
                 mutation_scale=100,
                 fc='orange',
                 ec='red',
-                shrinkA=0,
+                shrinkA=5,
+                shrinkB=0,
             )
             ax.add_patch(self.cur_arrow)
-            self.cur_label = ax.text(xval + 0.25, self.yoffs, str(yval),
+            self.cur_label = ax.text(xval + 0.5, self.yoffs, str(yval),
                 ha='center',
                 va='center',
                 clip_on=True,
