@@ -290,9 +290,11 @@ class PlotManager(object):
     def configure(self):
         if not self.is_configured and self.plots:
             idxs = {}
+            state_plots = OrderedDict()
             for plot, (row, col) in self.plots.items():
                 xax = None
-                if isinstance(plot, tasksweep.SweepPlot) and plot.idx in idxs:
+                plt_types = tasksweep.SweepPlot, tasksweep.StatePlot
+                if isinstance(plot, plt_types) and plot.idx in idxs:
                     xax = idxs[plot.idx]
                 ax = self.am.get_axes(row, col, xax)
                 self.plots[plot] = ax
@@ -316,6 +318,16 @@ class PlotManager(object):
                         ax.set_xlim(left-offs, right+offs)
                     if plot.idx not in idxs:
                         idxs[plot.idx] = ax
+                if isinstance(plot, tasksweep.StatePlot):
+                    state_plots.setdefault(ax, []).append(plot)
+                    ticks = []
+                    labels = []
+                    for p in state_plots[ax]:
+                        ticks.append(p.yoffs)
+                        labels.append(p.ylabel)
+                    ax.set_ylabel('')
+                    ax.set_yticks(ticks)
+                    ax.set_yticklabels(labels)
             self.am.fig.tight_layout()
             self.is_configured = True
 
@@ -332,6 +344,23 @@ class PlotManager(object):
             xlabel='time / (clock ticks)' if xlabel is None else xlabel,
             ylabel=arg.name if ylabel is None else ylabel,
             **kwargs)
+        self.plots[plot] = row, col
+        self.plot_datas[plot] = arg
+
+    def add_state_plot(self, arg, row, col, xlabel, ylabel, use_cursor,
+                       **kwargs):
+        plot = tasksweep.StatePlot(
+            idx=(0,),
+            x='time',
+            y='value',
+            use_cursor=use_cursor,
+            xlabel='time / (clock ticks)' if xlabel is None else xlabel,
+            ylabel=arg.name if ylabel is None else ylabel,
+            **kwargs)
+        for p, (r, c) in self.plots.items():
+            if r == row and c == col:
+                if isinstance(p, tasksweep.StatePlot):
+                    plot.yoffs -= 1
         self.plots[plot] = row, col
         self.plot_datas[plot] = arg
 
@@ -663,6 +692,7 @@ class HyFSM(FSM):
         param = Param(func_name, parent=self)
         param.value = getattr(self, func_name)
         kwargs['__obj__'] = param
+        kwargs['__func_name__'] = 'add_sweep_plot'
         kwargs['row'] = row
         kwargs['col'] = col
         kwargs['xlabel'] = xlabel
@@ -679,6 +709,23 @@ class HyFSM(FSM):
             ylabel = '{}.\nstates.\n{}'
             ylabel = ylabel.format(self.__class__.__name__, state_name)
         kwargs['__obj__'] = param
+        kwargs['__func_name__'] = 'add_sweep_plot'
+        kwargs['row'] = row
+        kwargs['col'] = col
+        kwargs['xlabel'] = xlabel
+        kwargs['ylabel'] = ylabel
+        kwargs['use_cursor'] = use_cursor
+        self._plot_config.append(kwargs)
+        self._results[self._fsm_state] = []
+
+    def plot_fsm(self, row=0, col=0,
+                 xlabel=None, ylabel=None, use_cursor=True, **kwargs):
+        param = self._fsm_state
+        if ylabel is None:
+            ylabel = '{}.{}'
+            ylabel = ylabel.format(self.__class__.__name__, param.name)
+        kwargs['__obj__'] = param
+        kwargs['__func_name__'] = 'add_state_plot'
         kwargs['row'] = row
         kwargs['col'] = col
         kwargs['xlabel'] = xlabel
@@ -694,6 +741,7 @@ class HyFSM(FSM):
             ylabel = ylabel.format(self.__class__.__name__, name)
         param = self.inputs._params[name]
         kwargs['__obj__'] = param
+        kwargs['__func_name__'] = 'add_sweep_plot'
         kwargs['row'] = row
         kwargs['col'] = col
         kwargs['xlabel'] = xlabel
@@ -710,7 +758,8 @@ class HyFSM(FSM):
             for kwargs in fsm._plot_config:
                 kwargs = kwargs.copy()
                 obj = kwargs.pop('__obj__')
-                self._pm.add_sweep_plot(obj, **kwargs)
+                func = getattr(self._pm, kwargs.pop('__func_name__'))
+                func(obj, **kwargs)
                 row = kwargs['row']
                 col = kwargs['col']
                 self._am.append_loc(row, col)
@@ -812,4 +861,3 @@ class HyFSM(FSM):
             param._pointer.value = value
             values[name] = value
         return values
-

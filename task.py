@@ -36,6 +36,7 @@ import pandas as pd
 import matplotlib.pylab as plt
 from matplotlib.gridspec import GridSpec
 from matplotlib.colors import colorConverter
+import matplotlib.patches as patches
 from colorsys import rgb_to_hls, hls_to_rgb
 
 try:
@@ -1973,6 +1974,83 @@ class TaskSweep(object):
 
     def as_list(self):
         return list(self)
+
+
+class StatePlot(object):
+    def __init__(self, idx, x='', y='', xlabel='', ylabel='', yoffs=0,
+                 use_cursor=True, **kwargs):
+        self.idx = idx
+        self.x = x
+        self.y = y
+        self.xlabel = xlabel
+        self.ylabel = ylabel
+        self.yoffs = yoffs
+        self.use_cursor = use_cursor
+        self.kwargs = kwargs
+        self.reset()
+
+    def reset(self):
+        self.cur_state = None
+        self.cur_label = None
+        self.cur_arrow = None
+        self.times = {}
+        self.cursor = None
+        self.keys = {}
+
+    def plot(self, ax, key, args, output):
+        xval = output[self.x]
+        yval = output[self.y]
+        #~ if self.cur_state is None:
+        ax.yticks = []
+        ax.yticklabels = []
+        if self.cur_arrow is not None:
+            self.cur_arrow.set_positions([xval, self.yoffs], None)
+            posA, posB = self.cur_arrow._posA_posB
+            xmid = (posA[0] + posB[0]) / 2
+            self.cur_label.set_position([xmid, self.yoffs])
+            self.cur_arrow.shrinkA = 2
+        if self.cur_state == yval:
+            self.cur_arrow.shrinkA = 0
+        else:
+            style = patches.ArrowStyle.Simple(
+                head_length=0.1,
+                head_width=0.2,
+            )
+            self.cur_arrow = patches.FancyArrowPatch(
+                [xval + 0.5, self.yoffs], [xval, self.yoffs],
+                arrowstyle=style,
+                mutation_scale=100,
+                fc='orange',
+                ec='red',
+                shrinkA=0,
+            )
+            ax.add_patch(self.cur_arrow)
+            self.cur_label = ax.text(xval + 0.25, self.yoffs, str(yval),
+                ha='center',
+                va='center',
+                clip_on=True,
+            )
+            self.cur_state = yval
+        self.times[xval] = self.cur_arrow, self.cur_label
+        self.keys[key] = xval, yval
+
+    def update_cursor(self, ax, key, args, output, **kwargs):
+        x, y = self.keys[key]
+        self.set_cursor(ax, x, y)
+        return y
+
+    def set_cursor(self, ax, xval, yval, color=''):
+        if self.use_cursor:
+            if self.cursor is not None:
+                # reset old position
+                arrow, label = self.cursor
+                arrow.set_linewidth(arrow.get_linewidth() / 3)
+                label.set_weight(label.get_weight() / 2)
+            # set new position
+            self.cursor = self.times[xval]
+            arrow, label = self.cursor
+            arrow.set_linewidth(3 * arrow.get_linewidth())
+            label.set_weight(2 * label.get_weight())
 
 
 class SweepPlot(object):
