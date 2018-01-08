@@ -106,11 +106,8 @@ ctrl.plot_func('cmd_count', row=0, xlabel='')
 ctrl.plot_func('ev_counter_done', row=1, xlabel='')
 ctrl.counter.plot_state('counter', row=2, xlabel='')
 ctrl.counter.plot_input('cmd_start', row=3, xlabel='')
-
 ctrl.counter.plot_fsm(row=4)
 ctrl.plot_fsm(row=4)
-
-ctrl.configure_plots()
 
 # process an input stream with the hierachical stacked
 # controler-counter-FSM

@@ -826,6 +826,7 @@ class HyFSM(FSM):
         return fsm_cache
 
     def run(self, **kwargs):
+        self.configure_plots()
         for name, param in self.outputs:
             self._results[param] = []
         datas = []
@@ -846,8 +847,9 @@ class HyFSM(FSM):
             if self._am is not None:
                 self._pm.plot()
         if self._am is not None:
-            self._am.fig.show()
-            self._am.update()
+            if self._am.fig is not None:
+                self._am.fig.show()
+                self._am.update()
         results = {}
         for name, param in self.outputs:
             results[name] = self._results[param]
