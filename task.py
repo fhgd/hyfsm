@@ -2032,6 +2032,7 @@ class StatePlot(object):
             self.cur_state = yval
         self.times[xval] = self.cur_arrow, self.cur_label
         self.keys[key] = xval, yval
+        self.set_cursor(ax, xval, yval)
 
     def update_cursor(self, ax, key, args, output, **kwargs):
         x, y = self.keys[key]

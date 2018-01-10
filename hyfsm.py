@@ -7,6 +7,13 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.colors import colorConverter
 from colorsys import rgb_to_hls, hls_to_rgb
 
+from matplotlib.patches import FancyBboxPatch, PathPatch
+from matplotlib.patches import FancyArrowPatch, ArrowStyle
+import matplotlib.patches as patches
+from matplotlib.path import Path
+
+from html.parser import HTMLParser
+
 import task as tasksweep
 
 
@@ -270,6 +277,173 @@ def get_name(func):
         return func.__name__
 
 
+class MyHTMLParser(HTMLParser):
+    def __init__(self, debug=False):
+        super().__init__()
+        self.text = ''
+        self.debug = debug
+
+    def handle_starttag(self, tag, attrs):
+        if self.debug:
+            print("Encountered a start tag:", tag)
+        if tag == 'br':
+            self.text += '\n'
+        elif tag == 'i':
+            self.text += '$\mathit{'
+        elif tag == 'font':
+            self.text += '$\mathtt{'
+
+    def handle_endtag(self, tag):
+        if self.debug:
+            print("Encountered an end tag :", tag)
+        if tag == 'i':
+            self.text += '}$'
+        elif tag == 'font':
+            self.text += '}$'
+
+    def handle_data(self, data):
+        if self.debug:
+            print("Encountered some data  :", data)
+        self.text += data
+
+    def feed(self, data):
+        super().feed(data)
+        result = str(self.text)
+        self.text = ''
+        return result
+
+
+parser = MyHTMLParser()
+
+
+class FSM_Plot(object):
+    def __init__(self, hyfsm, lines, name='', use_cursor=True):
+        self.hyfsm = hyfsm
+        self.lines = lines
+        self.name = name
+        self.use_cursor = use_cursor
+        self.reset()
+
+    def reset(self):
+        self.cur_state = None
+        self.cursor = None
+        self.states = {}
+        self.transitions = {}
+        self.times = {}
+        self.keys = {}
+
+    def plot(self, ax, key, args, output):
+        xval = output['time']
+        yval = output['value']
+        if self.cur_state is None:
+            for line in self.lines:
+                if line.startswith('graph'):
+                    items = line.split()
+                    width, height = map(float, items[2:4])
+                    offs = 0.1
+                    ax.set_xlim(0 - offs, width  + offs)
+                    ax.set_ylim(0 - offs, height + offs)
+                elif line.startswith('node'):
+                    items = line.split()
+                    name = items[1]
+                    xpos, ypos, width, height = map(float, items[2:6])
+                    pad = 0.15
+                    pos = xpos - width/2 + pad, ypos - height/2 + pad
+                    box = FancyBboxPatch(pos,
+                        width - 2*pad,
+                        height - 2*pad,
+                        boxstyle="round,pad={}".format(pad),
+                        fc='skyblue',
+                        #~ ec='royalblue'
+                        ec='navy'
+                    )
+                    ax.add_patch(box)
+                    label = line.partition('<')[2].rpartition('>')[0]
+                    label = parser.feed(label)
+                    label = ax.text(xpos, ypos, label,
+                        ha='center',
+                        va='center',
+                        clip_on=True,
+                        color='navy',
+                    )
+                    self.states[name] = box
+                elif line.startswith('edge'):
+                    items = line.split()
+                    n1, n2 = items[1:3]
+                    num = int(items[3])
+                    xdatas = list(map(float, items[4 : 4+2*num : 2]))
+                    ydatas = list(map(float, items[5 : 5+2*num : 2]))
+
+                    path = [(Path.MOVETO, (xdatas[0], ydatas[0]))]
+                    for x, y in zip(xdatas[1:], ydatas[1:]):
+                        point = Path.CURVE4, (x, y)
+                        path.append(point)
+                    cmds, verts = zip(*path)
+                    ppath = Path(np.array(verts), cmds)
+                    patch = PathPatch(ppath,
+                        fc='none',
+                        ec='navy'
+                    )
+                    ax.add_patch(patch)
+
+                    dx = (xdatas[-1] - xdatas[-2]) * 0.05
+                    dy = (ydatas[-1] - ydatas[-2]) * 0.05
+                    arrow = ax.arrow(xdatas[-1], ydatas[-1], dx, dy,
+                        head_width=0.025,
+                        head_length=0.05,
+                        overhang=0.2,
+                        fc='navy',
+                        ec='navy'
+                    )
+                    xypos = items[-4:-2]
+                    label = line.partition('<')[2].rpartition('>')[0]
+                    label = parser.feed(label)
+                    ax.annotate(label, xypos,
+                        ha='center',
+                        va='center',
+                        color='navy',
+                    )
+                    event = label.partition('\n')[0]
+                    self.transitions[(n1, event)] = patch, arrow
+            ax.set_title(self.name)
+            ax.grid(False)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for line in ax.spines.values():
+                 line.set_visible(False)
+            ax.set_aspect(1)
+        self.cur_state = yval
+        self.times[xval] = self.cur_state, self.hyfsm._last_transition
+        self.keys[key] = xval, yval
+        self.set_cursor(ax, xval, yval)
+
+    def update_cursor(self, ax, key, args, output, **kwargs):
+        x, y = self.keys[key]
+        self.set_cursor(ax, x, y)
+        return y
+
+    def set_cursor(self, ax, xval, yval, color=''):
+        if self.use_cursor:
+            if self.cursor is not None:
+                # reset old position
+                state, transition = self.cursor
+                box = self.states[state]
+                box.set_linewidth(box.get_linewidth() / 3)
+                if transition in self.transitions:
+                    path, arrow = self.transitions[transition]
+                    path.set_linewidth(path.get_linewidth() / 3)
+                    arrow.set_linewidth(arrow.get_linewidth() / 3)
+            # set new position
+            self.cursor = self.times[xval]
+            state, transition = self.cursor
+            box = self.states[state]
+            box.set_linewidth(3 * box.get_linewidth())
+            if transition in self.transitions:
+                path, arrow = self.transitions[transition]
+                path.set_linewidth(3 * path.get_linewidth())
+                arrow.set_linewidth(3 * arrow.get_linewidth())
+
+
 class PlotManager(object):
     def __init__(self, task=None, hyfsm=None):
         self.plots = OrderedDict()
@@ -299,13 +473,13 @@ class PlotManager(object):
                 ax = self.am.get_axes(row, col, xax)
                 self.plots[plot] = ax
                 ax.grid(True)
-                if plot.xlabel:
+                if hasattr(plot, 'xlabel') and plot.xlabel:
                     ax.set_xlabel(plot.xlabel)
                 else:
                     # NEW
                     plt.setp(ax.get_xticklabels(), visible=False)
                     ax.axes.xaxis.set_ticks_position('none')
-                if plot.ylabel:
+                if hasattr(plot, 'ylabel') and plot.ylabel:
                     ax.set_ylabel(plot.ylabel,
                                   rotation='horizontal',
                                   ha='right',
@@ -361,6 +535,15 @@ class PlotManager(object):
             if r == row and c == col:
                 if isinstance(p, tasksweep.StatePlot):
                     plot.yoffs -= 1
+        self.plots[plot] = row, col
+        self.plot_datas[plot] = arg
+
+    def add_fsm_drawing(self, arg, row, col, use_cursor):
+        hyfsm = arg._parent
+        name = hyfsm.__class__.__name__
+        g = hyfsm.as_dot()
+        lines = g.create_plain().decode().split('\n')
+        plot = FSM_Plot(hyfsm, lines, name, use_cursor)
         self.plots[plot] = row, col
         self.plot_datas[plot] = arg
 
@@ -675,8 +858,9 @@ class HyFSM(FSM):
         #~ self._config = []
         #~ self._configure_idx = []
 
-        self._fsm_state = Param('fsm')
+        self._fsm_state = Param('fsm', parent=self)
         self._fsm_state.value = StatePointer(self, 'fsm')
+        self._last_transition = None, None
 
     @property
     def _fsms(self):
@@ -730,6 +914,17 @@ class HyFSM(FSM):
         kwargs['col'] = col
         kwargs['xlabel'] = xlabel
         kwargs['ylabel'] = ylabel
+        kwargs['use_cursor'] = use_cursor
+        self._plot_config.append(kwargs)
+        self._results[self._fsm_state] = []
+
+    def draw_fsm(self, row=0, col=0, use_cursor=True):
+        param = self._fsm_state
+        kwargs = {}
+        kwargs['__obj__'] = param
+        kwargs['__func_name__'] = 'add_fsm_drawing'
+        kwargs['row'] = row
+        kwargs['col'] = col
         kwargs['use_cursor'] = use_cursor
         self._plot_config.append(kwargs)
         self._results[self._fsm_state] = []
@@ -814,6 +1009,7 @@ class HyFSM(FSM):
         if self.graph:
             event = self.get_active_event()
             if event:
+                self._last_transition = self.states['fsm'], event.__name__
                 # make state transition and action
                 newstates = self.states
                 actions, newstates['fsm'] = self.graph[newstates['fsm']][event]

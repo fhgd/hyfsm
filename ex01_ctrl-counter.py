@@ -109,6 +109,9 @@ ctrl.counter.plot_input('cmd_start', row=3, xlabel='')
 ctrl.counter.plot_fsm(row=4)
 ctrl.plot_fsm(row=4)
 
+ctrl.draw_fsm(row=(0, 1), col=1)
+ctrl.counter.draw_fsm(row=(2, 3), col=1)
+
 # process an input stream with the hierachical stacked
 # controler-counter-FSM
 values = [3] * 20
