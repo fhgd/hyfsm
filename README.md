@@ -80,7 +80,7 @@ counter = Counter()
 counter.draw('counter_fsm_graph.png')
 ```
 
-![Counter FSM](./counter_fsm_graph.png)
+![Graph of Counter-FSM](./counter_fsm_graph.png)
 
 In order to see the Counter-FSM running:
 
@@ -155,7 +155,7 @@ ctrl = Controller()
 ctrl.draw('ctrl_fsm_graph.png')
 ```
 
-![Controller FSM](./ctrl_fsm_graph.png)
+![Graph of Controller-FSM](./ctrl_fsm_graph.png)
 
 and process the controller-FSM with an input stream:
 
