@@ -77,10 +77,10 @@ FSM with
 # create Counter-FSM
 counter = Counter()
 
-counter.draw('counter_fsm_graph.png')
+counter.draw('counter_fsm_graph.svg')
 ```
 
-![Graph of Counter-FSM](./counter_fsm_graph.png)
+![Graph of Counter-FSM](./counter_fsm_graph.svg)
 
 In order to see the Counter-FSM running:
 
@@ -152,10 +152,10 @@ Again, we generate the graph of the controller FSM
 # create Controller-FSM
 ctrl = Controller()
 
-ctrl.draw('ctrl_fsm_graph.png')
+ctrl.draw('ctrl_fsm_graph.svg')
 ```
 
-![Graph of Controller-FSM](./ctrl_fsm_graph.png)
+![Graph of Controller-FSM](./ctrl_fsm_graph.svg)
 
 and process the controller-FSM with an input stream:
 
