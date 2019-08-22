@@ -27,59 +27,62 @@ and one output:
 
 Here is the definition of the counter system:
 
-    class Counter(HyFSM):
-        # list all input and output parameters as a comma separated string
-        inputs = 'cmd_start, limit'
-        outputs = 'counter'
+```python
+class Counter(HyFSM):
+    # list all input and output parameters as a comma separated string
+    inputs = 'cmd_start, limit'
+    outputs = 'counter'
 
-        def __init__(self):
-            super().__init__()
+    def __init__(self):
+        super().__init__()
 
-            # add new discrete state variable and set initial value
-            self.add_state('counter', 0)
+        # add new discrete state variable and set initial value
+        self.add_state('counter', 0)
 
-            # define FSM graph
-            self.add_transition('IDLE',     self.ev_start,    'COUNTING', self.count)
-            self.add_transition('COUNTING', self.ev_running,  'COUNTING', self.count)
-            self.add_transition('COUNTING', self.ev_finished, 'DONE')
-            self.add_transition('DONE',     self.ev_stop,     'IDLE', self.reset)
+        # define FSM graph
+        self.add_transition('IDLE',     self.ev_start,    'COUNTING', self.count)
+        self.add_transition('COUNTING', self.ev_running,  'COUNTING', self.count)
+        self.add_transition('COUNTING', self.ev_finished, 'DONE')
+        self.add_transition('DONE',     self.ev_stop,     'IDLE', self.reset)
 
-        def ev_start(self):
-            return self.inputs.cmd_start.value
+    def ev_start(self):
+        return self.inputs.cmd_start.value
 
-        def ev_stop(self):
-            return not self.ev_start()
+    def ev_stop(self):
+        return not self.ev_start()
 
-        def ev_running(self):
-            return self.states['counter'] < self.inputs.limit.value
+    def ev_running(self):
+        return self.states['counter'] < self.inputs.limit.value
 
-        def ev_finished(self):
-            return not self.ev_running()
+    def ev_finished(self):
+        return not self.ev_running()
 
-        # action
-        def count(self):
-            return {'counter': self.states['counter'] + 1}
+    # action
+    def count(self):
+        return {'counter': self.states['counter'] + 1}
 
-        # action
-        def reset(self):
-            return {'counter': 0}
+    # action
+    def reset(self):
+        return {'counter': 0}
 
-        # output
-        def counter(self):
-            return self.states['counter']
-
+    # output
+    def counter(self):
+        return self.states['counter']
+```
 
 In order to see the Counter-FSM running:
 
-    # create Counter-FSM
-    counter = Counter()
+```python
+# create Counter-FSM
+counter = Counter()
 
-    # configure plots
-    counter.plot_state('counter', row=1)
-    counter.plot_fsm(row=0, xlabel='')
+# configure plots
+counter.plot_state('counter', row=1)
+counter.plot_fsm(row=0, xlabel='')
 
-    # process an input stream
-    counter.run(cmd_start=[1, 1, 1, 1], limit=[3, 3, 3, 3])
+# process an input stream
+counter.run(cmd_start=[1, 1, 1, 1], limit=[3, 3, 3, 3])
+```
 
 ![Counter FSM](./counter.png)
 
@@ -100,6 +103,7 @@ Outputs:
 
 Here is the definition of the controler system:
 
+```python
 class Controler(HyFSM):
         # list all input and output parameters as a comma separated string
         inputs = 'limit'
@@ -131,24 +135,27 @@ class Controler(HyFSM):
         # output
         def child_counter(self):
             return self.counter.states['counter']
+```
 
 Process the controler-FSM an input stream:
 
-    # create Controler-FSM
-    ctrl = Controler()
+```python
+# create Controler-FSM
+ctrl = Controler()
 
-    # configure plots
-    ctrl.plot_func('cmd_count', row=0, xlabel='')
-    ctrl.plot_func('ev_counter_done', row=1, xlabel='')
-    ctrl.counter.plot_state('counter', row=2, xlabel='')
-    ctrl.counter.plot_input('cmd_start', row=3, xlabel='')
-    ctrl.counter.plot_fsm(row=4)
-    ctrl.plot_fsm(row=4)
+# configure plots
+ctrl.plot_func('cmd_count', row=0, xlabel='')
+ctrl.plot_func('ev_counter_done', row=1, xlabel='')
+ctrl.counter.plot_state('counter', row=2, xlabel='')
+ctrl.counter.plot_input('cmd_start', row=3, xlabel='')
+ctrl.counter.plot_fsm(row=4)
+ctrl.plot_fsm(row=4)
 
-    # process an input stream with the hierachical stacked
-    # controler-counter-FSM
-    values = [3] * 20
-    ctrl.run(limit=values)
+# process an input stream with the hierachical stacked
+# controler-counter-FSM
+values = [3] * 20
+ctrl.run(limit=values)
+```
 
 ![Controler FSM](./controler.png)
 
