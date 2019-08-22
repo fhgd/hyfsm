@@ -70,12 +70,21 @@ class Counter(HyFSM):
         return self.states['counter']
 ```
 
-In order to see the Counter-FSM running:
+After creating an instance of the Counter-FSM we can generate the graph of the
+FSM with
 
 ```python
 # create Counter-FSM
 counter = Counter()
 
+counter.draw('counter_fsm_graph.png')
+```
+
+![Counter FSM](./counter_fsm_graph.png)
+
+In order to see the Counter-FSM running:
+
+```python
 # configure plots
 counter.plot_state('counter', row=1)
 counter.plot_fsm(row=0, xlabel='')
@@ -88,9 +97,9 @@ counter.run(cmd_start=[1, 1, 1, 1], limit=[3, 3, 3, 3])
 
 ----
 
-## Example 2: Controler for Counter-FSM
+## Example 2: Controller for Counter-FSM
 
-A simple controler FSM which controls a counter as a child-FSM.
+A simple controller FSM which controls a counter as a child-FSM.
 
 Input:
 
@@ -101,10 +110,10 @@ Outputs:
 * cmd_count:      command for starting the child-counter-FSM
 * child_counter:  counter value of child-FSM
 
-Here is the definition of the controler system:
+Here is the definition of the controller system:
 
 ```python
-class Controler(HyFSM):
+class Controller(HyFSM):
         # list all input and output parameters as a comma separated string
         inputs = 'limit'
         outputs = 'cmd_count, child_counter'
@@ -137,11 +146,22 @@ class Controler(HyFSM):
             return self.counter.states['counter']
 ```
 
-Process the controler-FSM an input stream:
+Again, we generate the graph of the controller FSM
 
 ```python
-# create Controler-FSM
-ctrl = Controler()
+# create Controller-FSM
+ctrl = Controller()
+
+ctrl.draw('ctrl_fsm_graph.png')
+```
+
+![Controller FSM](./ctrl_fsm_graph.png)
+
+and process the controller-FSM with an input stream:
+
+```python
+# create Controller-FSM
+ctrl = Controller()
 
 # configure plots
 ctrl.plot_func('cmd_count', row=0, xlabel='')
@@ -152,10 +172,10 @@ ctrl.counter.plot_fsm(row=4)
 ctrl.plot_fsm(row=4)
 
 # process an input stream with the hierachical stacked
-# controler-counter-FSM
+# controller-counter-FSM
 values = [3] * 20
 ctrl.run(limit=values)
 ```
 
-![Controler FSM](./controler.png)
+![Controller FSM](./controller.png)
 
